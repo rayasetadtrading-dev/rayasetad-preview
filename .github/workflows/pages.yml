@@ -1,0 +1,55 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Unpack site
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          import base64, tarfile, io, shutil
+          parts = sorted(Path('.').glob('site.tar.gz.b64.part*'))
+          if not parts:
+              raise SystemExit('no site.tar.gz.b64.part* files found')
+          b64 = ''.join(p.read_text() for p in parts).encode('ascii')
+          raw = base64.b64decode(b64)
+          site = Path('_site')
+          if site.exists():
+              shutil.rmtree(site)
+          site.mkdir()
+          with tarfile.open(fileobj=io.BytesIO(raw), mode='r:gz') as tar:
+              tar.extractall(site)
+          files = [p for p in site.rglob('*') if p.is_file()]
+          print('parts', [p.name for p in parts])
+          print('extracted', len(files))
+          print('images', len(list((site/'images').iterdir())) if (site/'images').exists() else 0)
+          PY
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
